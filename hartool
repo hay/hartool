@@ -21,29 +21,6 @@ class HarTool:
             data = json.loads(f.read())
             self.parser = HarParser(data)
 
-    def hashstring(self, s):
-        h = md5()
-        h.update(s.encode('utf-8'))
-        return h.hexdigest()
-
-    def save(self, filename, data, binary = False):
-        if binary:
-            if isinstance(data, str):
-                data = bytes(data, "utf-8")
-
-            with open(filename, "wb") as f:
-                bdata = base64.decodebytes(data)
-                f.write(bdata)
-        else:
-            with open(filename, "w") as f:
-                f.write(data)
-
-    def get_page(self):
-        if len(self.parser.pages) > 1:
-            raise Exception("There's more than one page in this archive, please specify")
-        else:
-            return self.parser.pages[0]
-
     def extract_all(self):
         # First save index.html
         page = self.get_page()
@@ -59,8 +36,11 @@ class HarTool:
     def extract_images(self):
         page = self.get_page()
 
-        for data in page.image_files:
+        for index, data in enumerate(page.image_files):
+            self.log(f"Extracting image {index}")
+
             if ("response" not in data) or (data["response"]["status"] != 200):
+                self.log("No data in response or 200 error")
                 continue
 
             content = data["response"]["content"]
@@ -75,26 +55,55 @@ class HarTool:
 
             filename = "%s.%s" % (hash_, filetype)
 
-            if verbose:
-                print("Saving %s" % filename)
+            self.log("Saving %s" % filename)
 
-            self.save(filename, rawdata)
+            self.save(filename, rawdata, binary = True)
+
+    def get_page(self):
+        if len(self.parser.pages) > 1:
+            raise Exception("There's more than one page in this archive, please specify")
+        else:
+            return self.parser.pages[0]
+
+    def hashstring(self, s):
+        h = md5()
+        h.update(s.encode('utf-8'))
+        return h.hexdigest()
 
     def list(self):
-        for page in self.parser.pages:
-            pprint(page.actual_page)
+        print("Listing pages in %s" % self.path)
 
-            for entry in page.entries:
-                url = entry["request"]["url"]
-                # print(url)
-                # print(json.dumps(entry["request"], indent = 4))
+        for page in self.parser.pages:
+            print(page)
+
+            if self.verbose:
+                for entry in page.entries:
+                    url = entry["request"]["url"]
+                    self.log("  %s" % url)
+
+    def log(self, msg):
+        if self.verbose:
+            print(msg)
+
+    def save(self, filename, data, binary = False):
+        if binary:
+            if isinstance(data, str):
+                data = bytes(data, "utf-8")
+
+            with open(filename, "wb") as f:
+                bdata = base64.decodebytes(data)
+                f.write(bdata)
+        else:
+            with open(filename, "w") as f:
+                f.write(data)
 
 def main():
     parser = argparse.ArgumentParser(description = "HAR (HTTP Archive) utility")
     parser.add_argument("path", type = str, nargs='?', help="path to HAR file")
-    parser.add_argument("-xa", "--extract-all", action="store_true", help="extract all files")
+    parser.add_argument("-p", "--page", help="specify page ID in archive")
+    parser.add_argument("-x", "--extract", action="store_true", help="extract all files")
     parser.add_argument("-xi", "--extract-images", action="store_true", help="extract all images")
-    parser.add_argument("-ls", "--list", action="store_true", help="list contents of har file")
+    parser.add_argument("-ls", "--list", action="store_true", help="list pages in file, add -v to list assets too")
     parser.add_argument("-v", "--verbose", action="store_true", help="print extra debug information")
     args = parser.parse_args()
 
@@ -108,7 +117,7 @@ def main():
         tool.extract_images()
     elif args.list:
         tool.list()
-    elif args.extract_all:
+    elif args.extract:
         tool.extract_all()
     else:
         sys.exit("No command given")
